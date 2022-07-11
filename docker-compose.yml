@@ -1,0 +1,77 @@
+networks:
+  idp:
+    external: true
+
+services:
+  idp-authentik:
+    container_name: idp-authentik
+    command: server
+    depends_on:
+      - idp-pgsql
+    networks:
+      - idp
+    ports:
+      - 127.0.0.1:9000:9000/tcp
+      - 127.0.0.1:9443:9443/tcp
+    env_file: .env
+    environment:
+      #- AUTHENTIK_LOG_LEVEL=debug
+      - AUTHENTIK_ERROR_REPORTING__ENABLED=false
+      - AUTHENTIK_GDPR_COMPLIANCE=false
+      - AUTHENTIK_REDIS__HOST=idp-redis
+      - AUTHENTIK_POSTGRESQL__HOST=idp-pgsql
+      - AUTHENTIK_POSTGRESQL__NAME=authentik
+      - AUTHENTIK_DEFAULT_USER_CHANGE_NAME=true
+      - AUTHENTIK_DEFAULT_USER_CHANGE_EMAIL=true
+      - AUTHENTIK_DEFAULT_USER_CHANGE_USERNAME=false
+      - AUTHENTIK_IMPERSTONATION=true
+    #volumes:
+      #- ./authentik/certs:/certs
+      #- ./authentik/templates:/templates
+    restart: on-failure
+    image: ghcr.io/goauthentik/server:2022.7.2
+
+  idp-worker:
+    container_name: idp-worker
+    user: root
+    command: worker
+    depends_on:
+      - idp-pgsql
+    networks:
+      - idp
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      #- ./authentik/certs:/certs
+      #- ./authentik/templates:/templates
+    env_file: .env
+    environment:
+      - AUTHENTIK_REDIS__HOST=idp-redis
+      - AUTHENTIK_POSTGRESQL__HOST=idp-pgsql
+      - AUTHENTIK_POSTGRESQL__NAME=authentik
+    #restart: on-failure
+    image: ghcr.io/goauthentik/server:2022.7.2
+
+  idp-pgsql:
+    container_name: idp-pgsql
+    networks:
+      - idp
+    volumes:
+      - ./pgsql/data:/var/lib/postgresql/data
+    env_file: .env
+    environment:
+      - POSTGRES_DB=authentik
+    restart: on-failure
+    image: postgres:14.4-alpine3.16
+
+  idp-redis:
+    container_name: idp-redis
+    networks:
+      - idp
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+      start_period: 20s
+      interval: 30s
+      retries: 5
+      timeout: 3s
+    restart: on-failure
+    image: redis:alpine
